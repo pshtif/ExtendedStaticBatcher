@@ -20,6 +20,7 @@ public class ExtendedStaticBatcher : MonoBehaviour
     public bool isGlobal = false;
     public LayerMask includeLayers = ~0;
     public bool useReflectionInternalPreChecks = true;
+    public bool warnOnNegativeScale = true;
 
     private PropertyInfo _staticBatchIndex;
     private PropertyInfo _disableBatching;
@@ -93,6 +94,11 @@ public class ExtendedStaticBatcher : MonoBehaviour
             {
                 Debug.LogWarning("Trying to static batch non readable geometry.");
                 continue;
+            }
+
+            if (filter.transform.localToWorldMatrix.determinant < 0.0 && warnOnNegativeScale)
+            {
+                Debug.LogWarning("Batching object will negative scaling will break into multiple batches.");
             }
 
             Renderer renderer = filter.GetComponent<Renderer>(); 
