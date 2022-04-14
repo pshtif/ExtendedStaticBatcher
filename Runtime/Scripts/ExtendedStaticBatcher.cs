@@ -5,6 +5,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using PixelFederation.Common.Attributes;
 using UnityEngine;
 
 public enum ExtendedStaticBatcherInitializationType
@@ -22,9 +23,11 @@ public class ExtendedStaticBatcher : MonoBehaviour
     public bool useReflectionInternalPreChecks = true;
     public bool warnOnNegativeScale = true;
 
-    private PropertyInfo _staticBatchIndex;
-    private PropertyInfo _disableBatching;
-    
+    private static PropertyInfo _staticBatchIndex;
+    private static PropertyInfo _disableBatching;
+
+    private Dictionary<MeshRenderer, Mesh> _batchedRenderers;
+
     void CacheReflection()
     {
         if (_staticBatchIndex == null)
@@ -56,9 +59,34 @@ public class ExtendedStaticBatcher : MonoBehaviour
         }
     }
 
+    [Button()]
     public void Batch()
     {
+        _batchedRenderers = new Dictionary<MeshRenderer, Mesh>();
+        
         StaticBatchingUtility.Combine(EnumerateObjectForBatching(), gameObject);
+
+        PostCheckIfAllBatcher();
+    }
+
+    [Button()]
+    public void Unbatch()
+    {
+        foreach (var pair in _batchedRenderers)
+        {
+            pair.Key.GetComponent<MeshFilter>().mesh = pair.Value;
+        }
+    }
+
+    void PostCheckIfAllBatcher()
+    {
+        foreach (var pair in _batchedRenderers)
+        {
+            if (!pair.Key.isPartOfStaticBatch)
+            {
+                Debug.Log("Not batched: "+pair.Key.name);
+            }
+        }
     }
 
     GameObject[] EnumerateObjectForBatching()
@@ -73,7 +101,8 @@ public class ExtendedStaticBatcher : MonoBehaviour
         {
             filters = GameObject.FindObjectsOfType<MeshFilter>();
         }
-        
+
+        int vertexCount = 0;
         foreach (var filter in filters)
         {
             // Discard all objects not included in specified layers
@@ -92,7 +121,7 @@ public class ExtendedStaticBatcher : MonoBehaviour
             // Mesh needs to readable for static batching
             if (!sharedMesh.isReadable)
             {
-                Debug.LogWarning("Trying to static batch non readable geometry.");
+                Debug.LogWarning("Trying to static batch non readable geometry: "+filter.name);
                 continue;
             }
 
@@ -101,7 +130,7 @@ public class ExtendedStaticBatcher : MonoBehaviour
                 Debug.LogWarning("Batching object will negative scaling will break into multiple batches.");
             }
 
-            Renderer renderer = filter.GetComponent<Renderer>(); 
+            MeshRenderer renderer = filter.GetComponent<MeshRenderer>(); 
             // Static batcher would discard them anyway so lets do it here as well
             if (renderer == null || !renderer.enabled)
             {
@@ -131,9 +160,16 @@ public class ExtendedStaticBatcher : MonoBehaviour
                     continue;
                 }
             }
+
+            if (vertexCount + sharedMesh.vertexCount > 64000)
+            {
+                Debug.Log("Breaking batch at vertex limit: "+filter.name);
+            }
             
+            vertexCount += filter.sharedMesh.vertexCount;
+            _batchedRenderers.Add(renderer, sharedMesh);
             objects.Add(filter.gameObject);
-        } 
+        }
 
         return objects.ToArray();
     }
